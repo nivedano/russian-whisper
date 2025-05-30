@@ -43,15 +43,18 @@
 
 ## Быстрый старт
 
-Один файл: python transcribe.py <аудиофайл> [файл_результата] [--segments] [--dry-run]
-Папка:     python transcribe.py <папка_аудио> [папка_результата] [--segments] [--dry-run]
+Один файл: `python transcribe.py <аудиофайл> [файл_результата] [--segments] [--dry-run]`
+Папка:     `python transcribe.py <папка_аудио> [папка_результата] [--segments] [--dry-run]`
 
 Примеры:
-  python transcribe.py speech.mp3 transcript.txt
-  python transcribe.py /path/to/audio/files
-  python transcribe.py /path/to/audio/files /path/to/output
-  python transcribe.py /path/to/audio/files /path/to/output --segments
-  python transcribe.py /path/to/audio/files /path/to/output --dry-run
+
+```bash
+python transcribe.py speech.mp3 transcript.txt
+python transcribe.py /path/to/audio/files
+python transcribe.py /path/to/audio/files /path/to/output
+python transcribe.py /path/to/audio/files /path/to/output --segments
+python transcribe.py /path/to/audio/files /path/to/output --dry-run
+```
 
 ## Лицензия
 
