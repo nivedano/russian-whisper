@@ -43,8 +43,17 @@
 
 ## Быстрый старт
 
-Один файл: `python transcribe.py <аудиофайл> [файл_результата] [--segments] [--dry-run]`
-Папка:     `python transcribe.py <папка_аудио> [папка_результата] [--segments] [--dry-run]`
+Один файл:
+
+```bash
+python transcribe.py <аудиофайл> [файл_результата] [--segments] [--dry-run]
+```
+
+Папка:
+
+```bash
+python transcribe.py <папка_аудио> [папка_результата] [--segments] [--dry-run]
+```
 
 Примеры:
 
