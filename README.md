@@ -15,10 +15,25 @@
    cd russian-whisper
    ```
 
+   Могут быть проблемы совместимости с python 3.13.
+   Точно работает на python 3.12.3.
+
 2. Установите зависимости:
   
    ```bash
    pip install -r requirements.txt
+   ```
+
+   Опционально создайте venv:
+
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   ```
+
+   ```powershell
+   python -m venv .venv
+   .venv\Scripts\activate.ps1
    ```
 
 3. (Опционально) Установите ffmpeg, если он ещё не установлен (для поддержки большинства аудиоформатов):
