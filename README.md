@@ -9,14 +9,18 @@
 ## Установка
 
 1. Клонируйте репозиторий:
+
    ```bash
    git clone https://github.com/nivedano/russian-whisper.git
    cd russian-whisper
    ```
+
 2. Установите зависимости:
+  
    ```bash
    pip install -r requirements.txt
    ```
+
 3. (Опционально) Установите ffmpeg, если он ещё не установлен (для поддержки большинства аудиоформатов):
    - Windows: скачайте с [ffmpeg.org/download.html](https://ffmpeg.org/download.html)
    - Linux: `sudo apt install ffmpeg`
@@ -24,41 +28,15 @@
 
 ## Быстрый старт
 
-```bash
-python transcribe.py --input path/to/audio.wav --output result.txt
-```
+Один файл: python transcribe.py <аудиофайл> [файл_результата] [--segments] [--dry-run]
+Папка:     python transcribe.py <папка_аудио> [папка_результата] [--segments] [--dry-run]
 
-## Примеры использования
-
-1. Транскрибировать аудиофайл и вывести результат в консоль:
-   ```bash
-   python transcribe.py --input sample.wav
-   ```
-2. Транскрибировать и сохранить результат в файл:
-   ```bash
-   python transcribe.py --input sample.wav --output transcript.txt
-   ```
-3. Использовать конкретную модель (например, medium):
-   ```bash
-   python transcribe.py --input sample.wav --model medium
-   ```
-4. Принудительно указать язык (например, русский):
-   ```bash
-   python transcribe.py --input sample.wav --language ru
-   ```
-
-## Параметры
-
-- `--input` (обязательный): путь к аудиофайлу для транскрибации
-- `--output`: путь для сохранения результата (по умолчанию вывод в консоль)
-- `--model`: название модели fast-whisper (`tiny`, `base`, `small`, `medium`, `large`)
-- `--language`: язык аудио (например, `ru` для русского, `en` для английского). Если не указан, определяется автоматически
-
-## Возможные проблемы
-
-- Если скрипт не видит ffmpeg, убедитесь, что он установлен и добавлен в PATH
-- Для больших моделей требуется больше оперативной памяти
-- Если возникают ошибки с зависимостями, попробуйте обновить pip и переустановить зависимости
+Примеры:
+  python transcribe.py speech.mp3 transcript.txt
+  python transcribe.py /path/to/audio/files
+  python transcribe.py /path/to/audio/files /path/to/output
+  python transcribe.py /path/to/audio/files /path/to/output --segments
+  python transcribe.py /path/to/audio/files /path/to/output --dry-run
 
 ## Лицензия
 

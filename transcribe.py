@@ -14,11 +14,12 @@ import glob
 from pathlib import Path
 
 class RussianWhisperTranscriber:
-    def __init__(self, model_name='large-v3', device_preference='cuda', cpu_threads=4):
+    def __init__(self, model_name='large-v3', device_preference='cuda', cpu_threads=4, dry_run=False):
         self.model_name = model_name
         self.device_preference = device_preference
         self.cpu_threads = cpu_threads
-        self.model = self._init_model()
+        if not dry_run:
+            self.model = self._init_model()
 
     def _init_model(self):
         try:
@@ -144,7 +145,7 @@ if __name__ == '__main__':
     input_path = sys.argv[1]
     print_segments = '--segments' in sys.argv
     dry_run = '--dry-run' in sys.argv
-    transcriber = RussianWhisperTranscriber()
+    transcriber = RussianWhisperTranscriber(dry_run=dry_run)
     # Check if input is a directory or file
     if os.path.isdir(input_path):
         output_dir = None
