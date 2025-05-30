@@ -105,9 +105,8 @@ class RussianWhisperTranscriber:
         successful = 0
         failed = 0
         for i, audio_file in enumerate(audio_files, 1):
-            print(f'\n{"="*60}')
-            print(f'Обработка файла {i}/{total_files}: {os.path.basename(audio_file)}')
-            print(f'{"="*60}')
+            # Light green color for header
+            print(f'\033[92mОбработка файла {i}/{total_files}: {os.path.basename(audio_file)}\033[0m')
             try:
                 base_name = Path(audio_file).stem
                 output_file = output_path / f'{base_name}.txt'
@@ -116,9 +115,7 @@ class RussianWhisperTranscriber:
             except Exception as e:
                 print(f'Ошибка при обработке {audio_file}: {str(e)}')
                 failed += 1
-        print(f'\n{"="*60}')
         print(f'Пакетная обработка завершена')
-        print(f'{"="*60}')
         print(f'Успешно обработано: {successful} файлов')
         print(f'Ошибок: {failed} файлов')
         print(f'Всего файлов: {total_files}')
