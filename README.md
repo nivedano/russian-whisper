@@ -18,13 +18,7 @@
    Могут быть проблемы совместимости с python 3.13.
    Точно работает на python 3.12.3.
 
-2. Установите зависимости:
-  
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-   Опционально создайте venv:
+1. (Опционально) Создайте venv:
 
    ```bash
    python -m venv .venv
@@ -36,7 +30,13 @@
    .venv\Scripts\activate.ps1
    ```
 
-3. (Опционально) Установите ffmpeg, если он ещё не установлен (для поддержки большинства аудиоформатов):
+1. Установите зависимости:
+  
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+1. (Опционально) Установите ffmpeg, если он ещё не установлен (для поддержки большинства аудиоформатов):
    - Windows: скачайте с [ffmpeg.org/download.html](https://ffmpeg.org/download.html)
    - Linux: `sudo apt install ffmpeg`
    - MacOS: `brew install ffmpeg`
