@@ -1,0 +1,43 @@
+name: russian-whisper
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python>=3.11
+  - pip
+  - numpy=2.2.6
+  - numba=0.61.2
+  - llvmlite=0.44.0
+  - networkx=3.5
+  - pillow=11.2.1
+  - sympy=1.13.1
+  - tqdm=4.67.1
+  - packaging=25.0
+  - requests=2.32.3
+  - libprotobuf-cuda
+  - pyyaml=6.0.2
+  - jinja2=3.1.6
+  - setuptools=65.7.0
+  - pip:
+      - av==14.4.0
+      - certifi==2025.4.26
+      - charset-normalizer==3.4.2
+      - colorama==0.4.6
+      - coloredlogs==15.0.1
+      - ctranslate2==4.6.0
+      - faster-whisper==1.1.1
+      - filelock==3.18.0
+      - flatbuffers==25.2.10
+      - fsspec==2025.5.1
+      - huggingface-hub==0.32.3
+      - humanfriendly==10.0
+      - idna==3.10
+      - markupsafe==3.0.2
+      - onnxruntime==1.22.0
+      - pyreadline3==3.5.4
+      - tokenizers==0.21.1
+      - torch==2.5.1+cu121
+      - torchaudio==2.5.1+cu121
+      - torchvision==0.20.1+cu121
+      - typing_extensions==4.13.2
+      - urllib3==2.4.0
