@@ -30,12 +30,11 @@ class RussianWhisperTranscriber:
             print(f'Используется CPU с {self.cpu_threads} потоками')
         return model
 
-    def find_audio_files(self, directory_path):
+    def find_audio_files(self, directory: Path):
         supported_extensions = ['*.mp3', '*.wav', '*.flac', '*.m4a', '*.aac', '*.ogg', '*.wma']
         audio_files = []
-        directory = Path(directory_path)
         if not directory.exists():
-            print(f'Ошибка: Папка {directory_path} не существует')
+            print(f'Ошибка: Папка {directory} не существует')
             return []
         for ext in supported_extensions:
             pattern = directory / ext
@@ -44,22 +43,30 @@ class RussianWhisperTranscriber:
             pattern_recursive = directory / '**' / ext
             files_recursive = glob.glob(str(pattern_recursive), recursive=True)
             audio_files.extend(files_recursive)
-        audio_files = sorted(list(set(audio_files)))
-        print(f'Найдено {len(audio_files)} аудиофайлов в {directory_path}:')
+        # Convert all paths to Path objects and remove duplicates
+        audio_files = sorted(list(set([Path(file) for file in audio_files])))
+        print(f'Найдено аудиофайлов: {len(audio_files)}')
         for file in audio_files:
-            print(f'  - {os.path.basename(file)}')
+            print(f'  - {file.name}')
         return audio_files
 
-    def transcribe_russian_audio(self, audio_file, output_file=None, print_segments=False, echo: bool = True, dry_run: bool = False):
+    def transcribe_russian_audio(self, 
+            audio_file: Path, 
+            output_file: Path | None = None, 
+            print_segments: bool = False, 
+            echo: bool = True, 
+            dry_run: bool = False):
         if output_file is None:
-            output_file = str(Path(audio_file).with_suffix('.txt'))
+            output_file = audio_file.with_suffix('.txt')
+            
         if dry_run:
-            print(f'[симуляция] Было бы сохранено в: {output_file}')
+            print(f'  [симуляция] Было бы сохранено в: {output_file}')
             return []
-        print(f'Распознавание: {audio_file} -> {output_file}')
+        
+        print(f'  Сохраняем в {output_file.name}')
         start_time = time.time()
         segments, info = self.model.transcribe(
-            audio_file,
+            str(audio_file),  # Convert Path to string for the model
             language='ru',
             beam_size=5,
             best_of=5,
@@ -73,24 +80,31 @@ class RussianWhisperTranscriber:
             ),
             initial_prompt='Русская речь, четкое произношение'
         )
-        print(f'Обнаружен язык: {info.language} (уверенность: {info.language_probability:.2f})')
-        print(f'Длительность: {info.duration:.2f} секунд')
+        print(f'  Обнаружен язык: \033[92m{info.language}\033[0m (уверенность: \033[92m{info.language_probability:.2f}\033[0m)')
+        print(f'  Длительность: \033[92m{info.duration:.2f}\033[0m секунд')
         transcription_lines = []
         f = open(output_file, 'w', encoding='utf-8')
         try:
             for segment in segments:
-                segment_desc = f'[{segment.start:.2f}с -> {segment.end:.2f}с]' if print_segments else ''
-                line = ' '.join([segment_desc, segment.text.strip()])
+                if print_segments:
+                    line = f'[{segment.start:.2f} -> {segment.end:.2f}] {segment.text.strip()}'
+                else:
+                    line = segment.text.strip()
                 transcription_lines.append(line)
                 if echo:
-                    print(f'{segment.end / info.duration * 100:6.2f}% {line}')
+                    print(f'\033[90m {segment.end / info.duration * 100:6.2f}%\033[0m {int(segment.end):3}c | {line}')
                 f.write(line + '\n')
+                f.flush()
             end_time = time.time()
             print(f'\nРаспознавание завершено за {end_time - start_time:.2f} секунд')
         finally:
             f.close()
 
-    def batch_transcribe_directory(self, directory_path, output_dir=None, print_segments=False, dry_run: bool = False):
+    def batch_transcribe_directory(self, 
+            directory_path: Path, 
+            output_dir: Path | None = None, 
+            print_segments: bool = False, 
+            dry_run: bool = False):
         audio_files = self.find_audio_files(directory_path)
         if not audio_files:
             print('Аудиофайлы не найдены!')
@@ -105,18 +119,19 @@ class RussianWhisperTranscriber:
         failed = 0
         for i, audio_file in enumerate(audio_files, 1):
             # Light green color for header
-            print(f'\033[92mОбработка файла {i}/{total_files}: {os.path.basename(audio_file)}\033[0m')
+            print(f'\033[92mОбработка файла {i}/{total_files}: {audio_file.name}\033[0m')
             try:
-                base_name = Path(audio_file).stem
+                audio_path = Path(audio_file)
+                base_name = audio_path.stem
                 output_file = output_path / f'{base_name}.txt'
-                self.transcribe_russian_audio(audio_file, str(output_file), print_segments=print_segments, dry_run=dry_run)
+                self.transcribe_russian_audio(audio_path, output_file, print_segments=print_segments, dry_run=dry_run)
                 successful += 1
             except Exception as e:
                 print(f'Ошибка при обработке {audio_file}: {str(e)}')
                 failed += 1
         print(f'Пакетная обработка завершена')
         print(f'Успешно обработано: {successful} файлов')
-        print(f'Ошибок: {failed} файлов')
+        print(f'Ошибок в файлах: {failed}')
         print(f'Всего файлов: {total_files}')
         print(f'Результаты сохранены в: {output_path}')
 
@@ -144,19 +159,20 @@ if __name__ == '__main__':
     try:
         transcriber = RussianWhisperTranscriber(dry_run=dry_run)
         # Check if input is a directory or file
-        if os.path.isdir(input_path):
+        input_path = Path(input_path)
+        if input_path.is_dir():
             output_dir = None
             for arg in sys.argv[2:]:
                 if not arg.startswith('--'):
-                    output_dir = arg
+                    output_dir = Path(arg)
                     break
-            print(f'Обработка папки: {input_path}')
+            print(f'Обработка папки: \033[92m{input_path}\033[0m')
             transcriber.batch_transcribe_directory(input_path, output_dir, print_segments=print_segments, dry_run=dry_run)
-        elif os.path.isfile(input_path):
+        elif input_path.is_file():
             output_file = None
             for arg in sys.argv[2:]:
                 if not arg.startswith('--'):
-                    output_file = arg
+                    output_file = Path(arg)
                     break
             print(f'Обработка одного файла: {input_path}')
             transcriber.transcribe_russian_audio(input_path, output_file, print_segments=print_segments, dry_run=dry_run)
