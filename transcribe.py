@@ -51,12 +51,12 @@ class RussianWhisperTranscriber:
         return audio_files
 
     def transcribe_russian_audio(self, audio_file, output_file=None, print_segments=False, echo: bool = True, dry_run: bool = False):
-        print(f'Распознавание: {audio_file}')
         if output_file is None:
             output_file = str(Path(audio_file).with_suffix('.txt'))
         if dry_run:
             print(f'[симуляция] Было бы сохранено в: {output_file}')
             return []
+        print(f'Распознавание: {audio_file} -> {output_file}')
         start_time = time.time()
         segments, info = self.model.transcribe(
             audio_file,
@@ -76,20 +76,19 @@ class RussianWhisperTranscriber:
         print(f'Обнаружен язык: {info.language} (уверенность: {info.language_probability:.2f})')
         print(f'Длительность: {info.duration:.2f} секунд')
         transcription_lines = []
-        for segment in segments:
-            segment_desc = f'[{segment.start:.2f}с -> {segment.end:.2f}с]' if print_segments else ''
-            line = f'{segment_desc} {segment.text.strip()}'
-            transcription_lines.append(line)
-            if echo:
-                print(line)
-        end_time = time.time()
-        print(f'\nРаспознавание завершено за {end_time - start_time:.2f} секунд')
-        if output_file:
-            with open(output_file, 'w', encoding='utf-8') as f:
-                for line in transcription_lines:
-                    f.write(line + '\n')
-            print(f'Результат сохранён в: {output_file}')
-        return transcription_lines
+        f = open(output_file, 'w', encoding='utf-8')
+        try:
+            for segment in segments:
+                segment_desc = f'[{segment.start:.2f}с -> {segment.end:.2f}с]' if print_segments else ''
+                line = ' '.join([segment_desc, segment.text.strip()])
+                transcription_lines.append(line)
+                if echo:
+                    print(f'{segment.end / info.duration * 100:6.2f}% {line}')
+                f.write(line + '\n')
+            end_time = time.time()
+            print(f'\nРаспознавание завершено за {end_time - start_time:.2f} секунд')
+        finally:
+            f.close()
 
     def batch_transcribe_directory(self, directory_path, output_dir=None, print_segments=False, dry_run: bool = False):
         audio_files = self.find_audio_files(directory_path)
@@ -142,24 +141,28 @@ if __name__ == '__main__':
     input_path = sys.argv[1]
     print_segments = '--segments' in sys.argv
     dry_run = '--dry-run' in sys.argv
-    transcriber = RussianWhisperTranscriber(dry_run=dry_run)
-    # Check if input is a directory or file
-    if os.path.isdir(input_path):
-        output_dir = None
-        for arg in sys.argv[2:]:
-            if not arg.startswith('--'):
-                output_dir = arg
-                break
-        print(f'Обработка папки: {input_path}')
-        transcriber.batch_transcribe_directory(input_path, output_dir, print_segments=print_segments, dry_run=dry_run)
-    elif os.path.isfile(input_path):
-        output_file = None
-        for arg in sys.argv[2:]:
-            if not arg.startswith('--'):
-                output_file = arg
-                break
-        print(f'Обработка одного файла: {input_path}')
-        transcriber.transcribe_russian_audio(input_path, output_file, print_segments=print_segments, dry_run=dry_run)
-    else:
-        print(f'Ошибка: {input_path} не является файлом или папкой')
-        sys.exit(1)
+    try:
+        transcriber = RussianWhisperTranscriber(dry_run=dry_run)
+        # Check if input is a directory or file
+        if os.path.isdir(input_path):
+            output_dir = None
+            for arg in sys.argv[2:]:
+                if not arg.startswith('--'):
+                    output_dir = arg
+                    break
+            print(f'Обработка папки: {input_path}')
+            transcriber.batch_transcribe_directory(input_path, output_dir, print_segments=print_segments, dry_run=dry_run)
+        elif os.path.isfile(input_path):
+            output_file = None
+            for arg in sys.argv[2:]:
+                if not arg.startswith('--'):
+                    output_file = arg
+                    break
+            print(f'Обработка одного файла: {input_path}')
+            transcriber.transcribe_russian_audio(input_path, output_file, print_segments=print_segments, dry_run=dry_run)
+        else:
+            print(f'Ошибка: {input_path} не является файлом или папкой')
+            sys.exit(1)
+    except KeyboardInterrupt:
+        print('\nПрерывание пользователем. Завершение работы.')
+        sys.exit(0)
