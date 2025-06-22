@@ -55,10 +55,11 @@ class RussianWhisperTranscriber:
             output_file: Path | None = None, 
             print_segments: bool = False, 
             echo: bool = True, 
-            dry_run: bool = False):
+            dry_run: bool = False,
+            resume_time: int | None = None):
         if output_file is None:
             output_file = audio_file.with_suffix('.txt')
-            
+        
         if dry_run:
             print(f'  [симуляция] Было бы сохранено в: {output_file}')
             return []
@@ -83,9 +84,13 @@ class RussianWhisperTranscriber:
         print(f'  Обнаружен язык: \033[92m{info.language}\033[0m (уверенность: \033[92m{info.language_probability:.2f}\033[0m)')
         print(f'  Длительность: \033[92m{info.duration:.2f}\033[0m секунд')
         transcription_lines = []
-        f = open(output_file, 'w', encoding='utf-8')
+        # If resume_time is set, append to file, else overwrite
+        file_mode = 'a' if resume_time is not None else 'w'
+        f = open(output_file, file_mode, encoding='utf-8')
         try:
             for segment in segments:
+                if resume_time is not None and segment.start < resume_time:
+                    continue
                 if print_segments:
                     line = f'[{segment.start:.2f} -> {segment.end:.2f}] {segment.text.strip()}'
                 else:
@@ -143,8 +148,8 @@ class RussianWhisperTranscriber:
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print('Использование:')
-        print('  Один файл: python transcribe.py <аудиофайл> [файл_результата] [--segments] [--dry-run]')
-        print('  Папка:     python transcribe.py <папка_аудио> [папка_результата] [--segments] [--dry-run]')
+        print('  Один файл: python transcribe.py <аудиофайл> [файл_результата] [--segments] [--dry-run] [--resume-time <секунды>]')
+        print('  Папка:     python transcribe.py <папка_аудио> [папка_результата] [--segments] [--dry-run] [--resume-time <секунды>]')
         print()
         print('Примеры:')
         print('  python transcribe.py speech.mp3 transcript.txt')
@@ -152,15 +157,31 @@ if __name__ == '__main__':
         print('  python transcribe.py /path/to/audio/files /path/to/output')
         print('  python transcribe.py /path/to/audio/files /path/to/output --segments')
         print('  python transcribe.py /path/to/audio/files /path/to/output --dry-run')
+        print('  python transcribe.py /path/to/audio/files /path/to/output --resume-time 120')
         sys.exit(1)
     input_path = sys.argv[1]
     print_segments = '--segments' in sys.argv
     dry_run = '--dry-run' in sys.argv
+    resume_time = None
+    if '--resume-time' in sys.argv:
+        idx = sys.argv.index('--resume-time')
+        if idx + 1 < len(sys.argv):
+            try:
+                resume_time = int(sys.argv[idx + 1])
+            except ValueError:
+                print('Ошибка: --resume-time требует целое число (секунды)')
+                sys.exit(1)
+        else:
+            print('Ошибка: --resume-time требует значение (секунды)')
+            sys.exit(1)
     try:
         transcriber = RussianWhisperTranscriber(dry_run=dry_run)
         # Check if input is a directory or file
         input_path = Path(input_path)
         if input_path.is_dir():
+            if resume_time is not None:
+                print('Ошибка: --resume-time можно использовать только для одного файла, а не для папки!')
+                sys.exit(1)
             output_dir = None
             for arg in sys.argv[2:]:
                 if not arg.startswith('--'):
@@ -175,7 +196,7 @@ if __name__ == '__main__':
                     output_file = Path(arg)
                     break
             print(f'Обработка одного файла: {input_path}')
-            transcriber.transcribe_russian_audio(input_path, output_file, print_segments=print_segments, dry_run=dry_run)
+            transcriber.transcribe_russian_audio(input_path, output_file, print_segments=print_segments, dry_run=dry_run, resume_time=resume_time)
         else:
             print(f'Ошибка: {input_path} не является файлом или папкой')
             sys.exit(1)
