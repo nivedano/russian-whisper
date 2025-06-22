@@ -65,9 +65,22 @@ class RussianWhisperTranscriber:
             return []
         
         print(f'  Сохраняем в {output_file.name}')
+        if resume_time:
+            import soundfile as sf
+            info = sf.info(str(audio_file))
+            sample_rate = info.samplerate
+            if resume_time >= info.duration:
+                print('Время возобновления превышает длину аудиофайла.')
+                return
+            print(f'  Возобновление с {resume_time}с')
+            start_frame = int(resume_time * sample_rate)
+            audio_data, sr = sf.read(audio_file, start=start_frame, dtype='float32')
+        else:
+            audio_data = str(audio_file)
+
         start_time = time.time()
         segments, info = self.model.transcribe(
-            str(audio_file),  # Convert Path to string for the model
+            audio_data,  # Convert Path to string for the model
             language='ru',
             beam_size=5,
             best_of=5,
@@ -168,6 +181,8 @@ if __name__ == '__main__':
         if idx + 1 < len(sys.argv):
             try:
                 resume_time = int(sys.argv[idx + 1])
+                # Remove --resume-time and its value from sys.argv
+                del sys.argv[idx:idx+2]
             except ValueError:
                 print('Ошибка: --resume-time требует целое число (секунды)')
                 sys.exit(1)
