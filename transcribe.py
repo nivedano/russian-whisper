@@ -4,14 +4,24 @@ Russian audio transcription using faster-whisper
 Optimized for best performance with Russian language audio
 Supports processing individual files or entire directories
 '''
+from typing import Iterable, Tuple
 import warnings
+
 warnings.filterwarnings('ignore', category=UserWarning, module='ctranslate2')
 from faster_whisper import WhisperModel
 import time
 import sys
 import os
 import glob
+import soundfile as sf
 from pathlib import Path
+
+
+class AdjustedSegment:
+    def __init__(self, original, time_offset):
+        self.start = original.start + time_offset
+        self.end = original.end + time_offset
+        self.text = original.text
 
 class RussianWhisperTranscriber:
     def __init__(self, model_name='large-v3', device_preference='cuda', cpu_threads=4, dry_run=False):
@@ -64,59 +74,79 @@ class RussianWhisperTranscriber:
             print(f'  [симуляция] Было бы сохранено в: {output_file}')
             return []
         
-        print(f'  Сохраняем в {output_file.name}')
-        if resume_time:
-            import soundfile as sf
-            info = sf.info(str(audio_file))
-            sample_rate = info.samplerate
-            if resume_time >= info.duration:
-                print('Время возобновления превышает длину аудиофайла.')
-                return
-            print(f'  Возобновление с {resume_time}с')
-            start_frame = int(resume_time * sample_rate)
-            audio_data, sr = sf.read(audio_file, start=start_frame, dtype='float32')
-        else:
-            audio_data = str(audio_file)
-
-        start_time = time.time()
-        segments, info = self.model.transcribe(
-            audio_data,  # Convert Path to string for the model
-            language='ru',
-            beam_size=5,
-            best_of=5,
-            temperature=0.0,
-            word_timestamps=True,
-            vad_filter=True,
-            vad_parameters=dict(
-                min_silence_duration_ms=500,
-                threshold=0.5,
-                min_speech_duration_ms=250
-            ),
-            initial_prompt='Русская речь, четкое произношение'
-        )
-        print(f'  Обнаружен язык: \033[92m{info.language}\033[0m (уверенность: \033[92m{info.language_probability:.2f}\033[0m)')
+        print(f'  Сохраняем в \033[92m{output_file.name}\033[0m')
+        
+        info = sf.info(str(audio_file))
         print(f'  Длительность: \033[92m{info.duration:.2f}\033[0m секунд')
-        transcription_lines = []
-        # If resume_time is set, append to file, else overwrite
-        file_mode = 'a' if resume_time is not None else 'w'
-        f = open(output_file, file_mode, encoding='utf-8')
-        try:
-            for segment in segments:
-                if resume_time is not None and segment.start < resume_time:
-                    continue
-                if print_segments:
-                    line = f'[{segment.start:.2f} -> {segment.end:.2f}] {segment.text.strip()}'
-                else:
-                    line = segment.text.strip()
-                transcription_lines.append(line)
-                if echo:
-                    print(f'\033[90m {segment.end / info.duration * 100:6.2f}%\033[0m {int(segment.end):3}c | {line}')
-                f.write(line + '\n')
-                f.flush()
+        start_time = time.time()
+        if resume_time:
+            segments = self._resume_transcription(audio_file, info, resume_time)
+            file_mode = 'a'
+        else:
+            segments = self._transcribe_audio(str(audio_file))
+            file_mode = 'w'
+        with open(output_file, file_mode, encoding='utf-8') as f:
+            self._process_segments(f, segments, info.duration, print_segments, echo)
             end_time = time.time()
             print(f'\nРаспознавание завершено за {end_time - start_time:.2f} секунд')
-        finally:
-            f.close()
+    
+    def _resume_transcription(self, audio_file_path: Path, info, resume_time: int):
+        sample_rate = info.samplerate
+        if resume_time >= info.duration:
+            raise ValueError('Время возобновления выходит за длину аудиофайла.')
+
+        print(f'  Возобновление с {resume_time}с')
+        start_frame = int(resume_time * sample_rate)
+        # Adjust chunk_duration based on your memory constraints (30s is usually safe)
+        chunk_duration = 30
+        chunk_frames = int(chunk_duration * sample_rate)
+        current_time = resume_time
+        
+        with sf.SoundFile(audio_file_path) as audio_file:
+            audio_file.seek(start_frame)
+            while True:
+                audio_chunk = audio_file.read(chunk_frames, dtype='float32')
+                if audio_chunk.size == 0:
+                    break
+                segments, info = self._transcribe_audio(audio_chunk)
+                # Adjust segment times to be relative to the full audio
+                for segment in segments:
+                    # Create a new segment with adjusted timestamps                    
+                    yield AdjustedSegment(segment, current_time)
+                
+                # Update current time for the next chunk
+                chunk_actual_duration = audio_chunk.shape[0] / sample_rate
+                current_time += chunk_actual_duration
+
+    def _transcribe_audio(self, audio):
+        return self.model.transcribe(
+                    audio,
+                    language='ru',
+                    beam_size=5,
+                    best_of=5,
+                    temperature=0.0,
+                    word_timestamps=True,
+                    vad_filter=True,
+                    vad_parameters=dict(
+                        min_silence_duration_ms=500,
+                        threshold=0.5,
+                        min_speech_duration_ms=250
+                    ),
+                    initial_prompt='Русская речь, четкое произношение'
+                )
+        
+    def _process_segments(self, f, segments, total_duration: float, print_segments: bool, echo: bool):
+        for segment in segments:
+            if print_segments:
+                line = f'[{segment.start:.2f} -> {segment.end:.2f}] {segment.text.strip()}'
+            else:
+                line = segment.text.strip()
+            if echo:
+                print(f'\033[90m {segment.end / total_duration * 100:6.2f}%\033[0m {int(segment.end):3}c | {line}')
+            if f:
+                f.write(line + '\n')
+                f.flush()
+        
 
     def batch_transcribe_directory(self, 
             directory_path: Path, 
@@ -181,6 +211,9 @@ if __name__ == '__main__':
         if idx + 1 < len(sys.argv):
             try:
                 resume_time = int(sys.argv[idx + 1])
+                if resume_time < 0:
+                    print('Ошибка: --resume-time должно быть неотрицательным числом')
+                    sys.exit(1)
                 # Remove --resume-time and its value from sys.argv
                 del sys.argv[idx:idx+2]
             except ValueError:
