@@ -66,7 +66,7 @@ class RussianWhisperTranscriber:
             print_segments: bool = False, 
             echo: bool = True, 
             dry_run: bool = False,
-            resume_time: int | None = None):
+            resume_time: int = 0):
         if output_file is None:
             output_file = audio_file.with_suffix('.txt')
         
@@ -79,61 +79,74 @@ class RussianWhisperTranscriber:
         info = sf.info(str(audio_file))
         print(f'  Длительность: \033[92m{info.duration:.2f}\033[0m секунд')
         start_time = time.time()
-        if resume_time:
-            segments = self._resume_transcription(audio_file, info, resume_time)
-            file_mode = 'a'
-        else:
-            segments = self._transcribe_audio(str(audio_file))
-            file_mode = 'w'
+        segments, _ = self._transcribe_audio_with_duration_strategy(str(audio_file), info.duration, resume_time)
+        file_mode = 'a' if resume_time else 'w'
         with open(output_file, file_mode, encoding='utf-8') as f:
             self._process_segments(f, segments, info.duration, print_segments, echo)
             end_time = time.time()
             print(f'\nРаспознавание завершено за {end_time - start_time:.2f} секунд')
     
-    def _resume_transcription(self, audio_file_path: Path, info, resume_time: int):
-        sample_rate = info.samplerate
-        if resume_time >= info.duration:
-            raise ValueError('Время возобновления выходит за длину аудиофайла.')
-
-        print(f'  Возобновление с {resume_time}с')
-        start_frame = int(resume_time * sample_rate)
-        # Adjust chunk_duration based on your memory constraints (30s is usually safe)
-        chunk_duration = 30
-        chunk_frames = int(chunk_duration * sample_rate)
-        current_time = resume_time
+    def _transcribe_audio_with_duration_strategy(self, audio_file_path: str, duration: float, resume_time: int = 0):
+        """Transcribe audio with parameters adapted to file duration"""
         
-        with sf.SoundFile(audio_file_path) as audio_file:
-            audio_file.seek(start_frame)
-            while True:
-                audio_chunk = audio_file.read(chunk_frames, dtype='float32')
-                if audio_chunk.size == 0:
-                    break
-                segments, info = self._transcribe_audio(audio_chunk)
-                # Adjust segment times to be relative to the full audio
-                for segment in segments:
-                    # Create a new segment with adjusted timestamps                    
-                    yield AdjustedSegment(segment, current_time)
-                
-                # Update current time for the next chunk
-                chunk_actual_duration = audio_chunk.shape[0] / sample_rate
-                current_time += chunk_actual_duration
+        base_params = {
+            'language': 'ru',
+            'word_timestamps': True,
+            'vad_filter': True,
+            'vad_parameters': dict(
+                min_silence_duration_ms=500,
+                threshold=0.5,
+                min_speech_duration_ms=250
+            ),
+            'initial_prompt': 'Русская речь, четкое произношение'
+        }
 
-    def _transcribe_audio(self, audio):
-        return self.model.transcribe(
-                    audio,
-                    language='ru',
-                    beam_size=5,
-                    best_of=5,
-                    temperature=0.0,
-                    word_timestamps=True,
-                    vad_filter=True,
-                    vad_parameters=dict(
-                        min_silence_duration_ms=500,
-                        threshold=0.5,
-                        min_speech_duration_ms=250
-                    ),
-                    initial_prompt='Русская речь, четкое произношение'
-                )
+        params = self._get_transcription_params(duration, resume_time)
+        final_params = {**base_params, **params}        
+        return self.model.transcribe(audio_file_path, **final_params)
+    
+    def _get_transcription_params(self, duration: float, resume_time: int = 0):
+        """Get transcription parameters based on audio duration and resume status"""
+        base_params = {
+            'beam_size': 5,
+            'best_of': 5
+        }
+
+        if resume_time >= duration:
+            raise ValueError('Время возобновления выходит за длину аудиофайла.')
+        if resume_time > 0:
+            print(f'  Возобновление с {resume_time}с')
+            base_params['clip_timestamps'] = resume_time
+
+        # Always use prevention settings for resume points
+        if resume_time or duration > 3600:  # > 1 hour
+            base_params.update({
+                'condition_on_previous_text': False,
+                # 'temperature': [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+                # 'compression_ratio_threshold': 1.35,
+                # 'no_speech_threshold': 0.3,
+                'repetition_penalty': 1.2,
+                # 'no_repeat_ngram_size': 3
+            }) # type: ignore
+        elif duration > 1800:  # 30-60 minutes
+            base_params.update({
+                'condition_on_previous_text': True,
+                # 'temperature': [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+                # 'compression_ratio_threshold': 1.8,
+                # 'no_speech_threshold': 0.45,
+                'repetition_penalty': 1.1,
+                # 'no_repeat_ngram_size': 2
+            }) # type: ignore
+        else:  # < 30 minutes
+            base_params.update({
+                'condition_on_previous_text': True,
+                # 'temperature': 0.0,
+                # 'compression_ratio_threshold': 2.4,
+                # 'no_speech_threshold': 0.6,
+                'repetition_penalty': 1.0
+            }) # type: ignore
+        
+        return base_params
         
     def _process_segments(self, f, segments, total_duration: float, print_segments: bool, echo: bool):
         for segment in segments:
@@ -244,7 +257,7 @@ if __name__ == '__main__':
                     output_file = Path(arg)
                     break
             print(f'Обработка одного файла: {input_path}')
-            transcriber.transcribe_russian_audio(input_path, output_file, print_segments=print_segments, dry_run=dry_run, resume_time=resume_time)
+            transcriber.transcribe_russian_audio(input_path, output_file, print_segments=print_segments, dry_run=dry_run, resume_time=resume_time or 0)
         else:
             print(f'Ошибка: {input_path} не является файлом или папкой')
             sys.exit(1)
