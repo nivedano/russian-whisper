@@ -24,7 +24,7 @@ class AdjustedSegment:
         self.text = original.text
 
 class RussianWhisperTranscriber:
-    def __init__(self, model_name='large-v3', device_preference='cuda', cpu_threads=4, dry_run=False):
+    def __init__(self, model_name='turbo', device_preference='cuda', cpu_threads=4, dry_run=False):
         self.model_name = model_name
         self.device_preference = device_preference
         self.cpu_threads = cpu_threads
@@ -215,6 +215,30 @@ if __name__ == '__main__':
         print('  python transcribe.py /path/to/audio/files /path/to/output --dry-run')
         print('  python transcribe.py /path/to/audio/files /path/to/output --resume-time 120')
         sys.exit(1)
+    if sys.argv[1] in ('-d', '--diagnostics'):
+        import torch
+        print(f"PyTorch version: {torch.__version__}")
+        print(f"CUDA available: {torch.cuda.is_available()}")
+        if torch.cuda.is_available():
+            print(f"CUDA version: {torch.version.cuda}") # type: ignore
+            print(f"GPU count: {torch.cuda.device_count()}")
+            current_device = torch.cuda.current_device()
+            print(f"Current GPU: {current_device} ({torch.cuda.get_device_name(current_device)})")
+            gpu_memory_gb = torch.cuda.get_device_properties(current_device).total_memory / (1024**3)
+            gpu_free_memory_gb = (torch.cuda.get_device_properties(current_device).total_memory - torch.cuda.memory_allocated(current_device)) / (1024**3)
+            print(f"Total GPU memory: {gpu_memory_gb:.1f} GB")
+            print(f"Free GPU memory: {gpu_free_memory_gb:.1f} GB")
+            print(""" Model memory requirements:
+    tiny: 0.5
+    base: 1.0
+    small: 2.0
+    medium: 5.0
+    large: 10.0
+    large:2': 10.0
+    large:3': 10.0
+    turbo: 3.0
+""")
+        sys.exit(0)
     input_path = sys.argv[1]
     print_segments = '--segments' in sys.argv
     dry_run = '--dry-run' in sys.argv
