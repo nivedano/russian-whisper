@@ -1,35 +1,57 @@
-# Russian Whisper: Installation and Usage
+# Russian Whisper: Installation and Usage (uv)
 
 ## Installation
 
-This project requires **Python 3.11**. We've provided setup scripts for both Windows and Linux/macOS to make installation straightforward.
+This project is managed with **uv** and is known to work on **Python 3.11**.
 
-### Windows
+Note: The current dependency set targets **Windows/Linux** (CUDA wheels). If you need macOS support, you’ll likely need to adjust the Torch dependencies in `pyproject.toml`.
 
-```powershell
-.\setup.ps1
-```
+### 1) Install uv
 
-### Linux/macOS
+Follow the official instructions: [docs.astral.sh/uv](https://docs.astral.sh/uv/)
+
+### 2) Create the environment and install dependencies
+
+From the repository root:
 
 ```bash
-chmod +x setup.sh
-./setup.sh
+uv sync
 ```
 
-These scripts will:
+This will create a `.venv` and install dependencies using `uv.lock`.
 
-1. Check if Python 3.11 is installed (and help you install it if needed)
-2. Create a virtual environment in `.venv`
-3. Install all dependencies, including PyTorch with CUDA support if available
+If you want to force Python 3.11 explicitly (optional):
+
+```bash
+uv python install 3.11
+uv sync --python 3.11
+```
+
+### 3) Optional: install ffmpeg
+
+`ffmpeg` helps with broad audio format support.
+
+- Windows: download from [ffmpeg.org/download.html](https://ffmpeg.org/download.html)
+- Linux: `sudo apt install ffmpeg`
+- macOS: `brew install ffmpeg`
 
 ## Running the Application
 
-You can run the application in multiple ways:
+### Option 1: Run with uv (default)
 
-### Option 1: Using the transcribe scripts (recommended)
+```bash
+uv run python transcribe.py [arguments]
+```
 
-We've provided convenient scripts that use Python directly from the virtual environment:
+Windows example:
+
+```powershell
+uv run .\transcribe.py "C:\\path\\to\\audio.m4a"
+```
+
+### Option 2: Use the provided helper scripts
+
+These scripts run the project’s `.venv` Python directly (no activation needed). They assume you already ran `uv sync`.
 
 #### Windows
 
@@ -40,93 +62,38 @@ We've provided convenient scripts that use Python directly from the virtual envi
 #### Linux/macOS
 
 ```bash
-chmod +x transcribe.sh
+chmod +x ./transcribe.sh
 ./transcribe.sh [arguments]
 ```
 
-Example with arguments:
-
-```bash
-./transcribe.sh speech.mp3 transcript.txt
-./transcribe.sh /path/to/audio/files /path/to/output --segments
-```
-
-### Option 2: Making the script accessible from anywhere
-
-You can add the script to your PATH or create a symbolic link in a directory that's already in your PATH:
+### Option 3: Make a "transcribe" command on your PATH
 
 #### Windows (PowerShell)
 
 ```powershell
-# Create a directory for scripts if needed
 mkdir -Force ~/bin
-# Create a hard link to the script
 New-Item -ItemType HardLink -Path ~/bin/transcribe.ps1 -Value $PWD/transcribe.ps1
-# Add ~/bin to PATH if not already there
-if ($env:PATH -notlike "*$HOME\bin*") { 
-    [Environment]::SetEnvironmentVariable("PATH", $env:PATH + ";$HOME\bin", "User")
-    Write-Host "Added ~/bin to PATH. You may need to restart your terminal."
+if ($env:PATH -notlike "*$HOME\bin*") {
+   [Environment]::SetEnvironmentVariable("PATH", $env:PATH + ";$HOME\bin", "User")
+   Write-Host "Added ~/bin to PATH. Restart your terminal to pick it up."
 }
 ```
 
 #### Linux/macOS
 
 ```bash
-# Create a directory for scripts if needed
 mkdir -p ~/bin
-# Create a hard link to the script
-ln -f transcribe ~/bin/transcribe
-# Make it executable
+ln -f "$PWD/transcribe.sh" ~/bin/transcribe
 chmod +x ~/bin/transcribe
-# Add ~/bin to PATH if not already there
 if [[ ":$PATH:" != *":$HOME/bin:"* ]]; then
-    echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
-    echo "Added ~/bin to PATH. Run 'source ~/.bashrc' or restart your terminal."
+   echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc
+   echo "Added ~/bin to PATH. Run 'source ~/.bashrc' or restart your terminal."
 fi
 ```
 
-After adding to your PATH, you can run the script from anywhere:
+Then:
 
 ```bash
 transcribe speech.mp3 transcript.txt
 transcribe /path/to/audio/folder /path/to/output/folder --segments
 ```
-
-### Option 3: Manually activating the environment
-
-First, activate the environment:
-
-#### Windows
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-#### Linux/macOS
-
-```bash
-source .venv/bin/activate
-```
-
-Then run the application:
-
-```bash
-python transcribe.py [arguments]
-```
-
-## Manual Installation
-
-If you prefer to install manually:
-
-1. Install Python 3.11 from [python.org](https://www.python.org/downloads/)
-2. Create a virtual environment: `python -m venv .venv`
-3. Activate it:
-   - Windows: `.\.venv\Scripts\activate`
-   - Linux/macOS: `source .venv/bin/activate`
-4. Install the standard dependencies: `pip install -r requirements.txt`  
-   (Note: This may fail with the PyTorch CUDA packages)
-5. For PyTorch with CUDA support:
-
-   ```bash
-   pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
-   ```

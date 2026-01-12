@@ -27,7 +27,7 @@ APP_SCRIPT="$PROJECT_DIR/transcribe.py"
 
 # Check if virtual environment exists
 if [ ! -f "$ENV_DIR/bin/python" ]; then
-    echo "Virtual environment not found. Please run setup.sh in the project directory first."
+    echo "Virtual environment not found. Run 'uv sync' in the project directory first."
     exit 1
 fi
 

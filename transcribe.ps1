@@ -29,7 +29,7 @@ $scriptArgs = $args
 
 # Check if virtual environment exists
 if (-not (Test-Path -Path "$envDir\Scripts\python.exe")) {
-    Write-Host "Virtual environment not found. Please run setup.ps1 in the project directory first."
+    Write-Host "Virtual environment not found. Run 'uv sync' in the project directory first."
     exit 1
 }
 

@@ -6,6 +6,10 @@ Supports processing individual files or entire directories
 '''
 from typing import Iterable, Tuple
 import warnings
+import subprocess
+import shutil
+import tempfile
+import hashlib
 
 warnings.filterwarnings('ignore', category=UserWarning, module='ctranslate2')
 from faster_whisper import WhisperModel
@@ -15,6 +19,10 @@ import os
 import glob
 import soundfile as sf
 from pathlib import Path
+
+
+class UnsupportedAudioFormatError(RuntimeError):
+    pass
 
 
 class AdjustedSegment:
@@ -66,7 +74,8 @@ class RussianWhisperTranscriber:
             print_segments: bool = False, 
             echo: bool = True, 
             dry_run: bool = False,
-            resume_time: int = 0):
+            resume_time: int = 0,
+            use_ffmpeg: bool = True):
         if output_file is None:
             output_file = audio_file.with_suffix('.txt')
         
@@ -75,16 +84,113 @@ class RussianWhisperTranscriber:
             return []
         
         print(f'  Сохраняем в \033[92m{output_file.name}\033[0m')
-        
-        info = sf.info(str(audio_file))
+
+        readable_path, info = self._get_readable_audio_path_and_info(audio_file, output_file=output_file, use_ffmpeg=use_ffmpeg)
         print(f'  Длительность: \033[92m{info.duration:.2f}\033[0m секунд')
         start_time = time.time()
-        segments, _ = self._transcribe_audio_with_duration_strategy(str(audio_file), info.duration, resume_time)
+        segments, _ = self._transcribe_audio_with_duration_strategy(str(readable_path), info.duration, resume_time)
         file_mode = 'a' if resume_time else 'w'
         with open(output_file, file_mode, encoding='utf-8') as f:
             self._process_segments(f, segments, info.duration, print_segments, echo)
             end_time = time.time()
             print(f'\nРаспознавание завершено за {end_time - start_time:.2f} секунд')
+
+    def _get_readable_audio_path_and_info(self, audio_file: Path, output_file: Path, use_ffmpeg: bool) -> tuple[Path, sf._SoundFileInfo]:
+        try:
+            return audio_file, sf.info(str(audio_file))
+        except sf.LibsndfileError as e:
+            if not use_ffmpeg:
+                raise UnsupportedAudioFormatError(self._humanize_soundfile_error(audio_file, e, ffmpeg_enabled=False)) from None
+
+            ffmpeg_path = shutil.which('ffmpeg')
+            if not ffmpeg_path:
+                raise UnsupportedAudioFormatError(self._humanize_soundfile_error(audio_file, e, ffmpeg_enabled=True, ffmpeg_found=False)) from None
+
+            converted = self._ffmpeg_convert_to_wav(audio_file, output_file=output_file, ffmpeg_path=ffmpeg_path)
+            try:
+                info = sf.info(str(converted))
+            except sf.LibsndfileError as e2:
+                raise UnsupportedAudioFormatError(self._humanize_soundfile_error(audio_file, e2, ffmpeg_enabled=True, ffmpeg_found=True)) from None
+            return converted, info
+
+    def _ffmpeg_convert_to_wav(self, audio_file: Path, output_file: Path, ffmpeg_path: str) -> Path:
+        cache_dir = output_file.parent / '.russian-whisper-cache'
+        try:
+            cache_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            cache_dir = Path(tempfile.gettempdir()) / 'russian-whisper-cache'
+            cache_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            stat = audio_file.stat()
+            key = f'{audio_file.resolve()}|{stat.st_size}|{stat.st_mtime_ns}'.encode('utf-8', errors='ignore')
+        except Exception:
+            key = str(audio_file).encode('utf-8', errors='ignore')
+
+        digest = hashlib.sha1(key).hexdigest()[:12]
+        out_path = cache_dir / f'{audio_file.stem}.{digest}.wav'
+        if out_path.exists():
+            print(f'  Используем кэш WAV: \033[90m{out_path.name}\033[0m')
+            return out_path
+
+        print('  Формат не поддерживается soundfile — пробуем декодировать через ffmpeg...')
+        cmd = [
+            ffmpeg_path,
+            '-hide_banner',
+            '-loglevel', 'error',
+            '-y',
+            '-i', str(audio_file),
+            '-ac', '1',
+            '-ar', '16000',
+            '-vn',
+            str(out_path),
+        ]
+        completed = subprocess.run(cmd, capture_output=True, text=True)
+        if completed.returncode != 0 or not out_path.exists():
+            details = (completed.stderr or completed.stdout or '').strip()
+            if details:
+                details = '\n' + details
+            raise UnsupportedAudioFormatError(
+                'ffmpeg не смог декодировать файл.\n'
+                f'Файл: {audio_file}\n'
+                f'Команда: {" ".join(cmd)}{details}'
+            )
+        return out_path
+
+    def _humanize_soundfile_error(self, audio_file: Path, err: Exception, ffmpeg_enabled: bool = True, ffmpeg_found: bool = True) -> str:
+        suffix = audio_file.suffix.lower()
+        path_str = str(audio_file)
+        format_hint = ''
+        if suffix in {'.m4a', '.aac', '.wma', '.mp4'}:
+            format_hint = (
+                'Похоже, это контейнер/кодек, который libsndfile (пакет soundfile) не умеет читать на вашей системе.\n'
+            )
+
+        ffmpeg_note = ''
+        if not ffmpeg_enabled:
+            ffmpeg_note = 'Авто-конвертация через ffmpeg отключена (флаг --no-ffmpeg).\n'
+        elif not ffmpeg_found:
+            ffmpeg_note = 'ffmpeg не найден в PATH. Установите ffmpeg или сконвертируйте файл вручную.\n'
+        else:
+            ffmpeg_note = 'Если установлен ffmpeg, скрипт обычно может конвертировать такие файлы автоматически.\n'
+
+        quoted_in = f'"{path_str}"'
+        quoted_out = f'"{audio_file.with_suffix(".wav")}"'
+
+        return (
+            'Не удалось открыть аудиофайл (soundfile/libsndfile): формат не распознан.\n'
+            f'Файл: {path_str}\n'
+            f'Формат: {suffix or "(без расширения)"}\n'
+            f'{format_hint}'
+            f'{ffmpeg_note}'
+            'Что делать:\n'
+            '1) Самый простой путь — конвертировать в WAV (моно, 16 kHz) и запустить снова:\n'
+            f'   ffmpeg -hide_banner -y -i {quoted_in} -ac 1 -ar 16000 {quoted_out}\n'
+            '2) Или конвертировать в MP3:\n'
+            f'   ffmpeg -hide_banner -y -i {quoted_in} -codec:a libmp3lame -q:a 2 "{audio_file.with_suffix(".mp3")}"\n'
+            'Если после конвертации всё равно ошибка — попробуйте WAV/FLAC и убедитесь, что файл не повреждён.\n'
+            f'Техническая причина: {err}'
+        )
     
     def _transcribe_audio_with_duration_strategy(self, audio_file_path: str, duration: float, resume_time: int = 0):
         """Transcribe audio with parameters adapted to file duration"""
@@ -242,6 +348,7 @@ if __name__ == '__main__':
     input_path = sys.argv[1]
     print_segments = '--segments' in sys.argv
     dry_run = '--dry-run' in sys.argv
+    use_ffmpeg = '--no-ffmpeg' not in sys.argv
     resume_time = None
     if '--resume-time' in sys.argv:
         idx = sys.argv.index('--resume-time')
@@ -281,10 +388,20 @@ if __name__ == '__main__':
                     output_file = Path(arg)
                     break
             print(f'Обработка одного файла: {input_path}')
-            transcriber.transcribe_russian_audio(input_path, output_file, print_segments=print_segments, dry_run=dry_run, resume_time=resume_time or 0)
+            transcriber.transcribe_russian_audio(
+                input_path,
+                output_file,
+                print_segments=print_segments,
+                dry_run=dry_run,
+                resume_time=resume_time or 0,
+                use_ffmpeg=use_ffmpeg,
+            )
         else:
             print(f'Ошибка: {input_path} не является файлом или папкой')
             sys.exit(1)
+    except UnsupportedAudioFormatError as e:
+        print(str(e))
+        sys.exit(2)
     except KeyboardInterrupt:
         print('\nПрерывание пользователем. Завершение работы.')
         sys.exit(0)
