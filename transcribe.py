@@ -19,6 +19,10 @@ import os
 import glob
 import soundfile as sf
 from pathlib import Path
+from rich.console import Console, Group
+from rich.progress import Progress, BarColumn, TextColumn, TaskProgressColumn, TimeElapsedColumn, TimeRemainingColumn
+from rich.text import Text
+from rich.live import Live
 
 
 class UnsupportedAudioFormatError(RuntimeError):
@@ -36,6 +40,7 @@ class RussianWhisperTranscriber:
         self.model_name = model_name
         self.device_preference = device_preference
         self.cpu_threads = cpu_threads
+        self.console = Console()
         if not dry_run:
             self.model = self._init_model()
 
@@ -88,12 +93,16 @@ class RussianWhisperTranscriber:
         readable_path, info = self._get_readable_audio_path_and_info(audio_file, output_file=output_file, use_ffmpeg=use_ffmpeg)
         print(f'  Длительность: \033[92m{info.duration:.2f}\033[0m секунд')
         start_time = time.time()
-        segments, _ = self._transcribe_audio_with_duration_strategy(str(readable_path), info.duration, resume_time)
+        if echo:
+            with self.console.status("[bold cyan]  Анализ аудио (VAD)...[/]", spinner="dots"):
+                segments, _ = self._transcribe_audio_with_duration_strategy(str(readable_path), info.duration, resume_time)
+        else:
+            segments, _ = self._transcribe_audio_with_duration_strategy(str(readable_path), info.duration, resume_time)
         file_mode = 'a' if resume_time else 'w'
         with open(output_file, file_mode, encoding='utf-8') as f:
             self._process_segments(f, segments, info.duration, print_segments, echo)
             end_time = time.time()
-            print(f'\nРаспознавание завершено за {end_time - start_time:.2f} секунд')
+            self.console.print(f'Распознавание завершено за {end_time - start_time:.2f} секунд')
 
     def _get_readable_audio_path_and_info(self, audio_file: Path, output_file: Path, use_ffmpeg: bool) -> tuple[Path, sf._SoundFileInfo]:
         try:
@@ -255,16 +264,39 @@ class RussianWhisperTranscriber:
         return base_params
         
     def _process_segments(self, f, segments, total_duration: float, print_segments: bool, echo: bool):
-        for segment in segments:
-            if print_segments:
-                line = f'[{segment.start:.2f} -> {segment.end:.2f}] {segment.text.strip()}'
-            else:
-                line = segment.text.strip()
-            if echo:
-                print(f'\033[90m {segment.end / total_duration * 100:6.2f}%\033[0m {int(segment.end):3}c | {line}')
-            if f:
-                f.write(line + '\n')
-                f.flush()
+        if not echo:
+            for segment in segments:
+                line = f'[{segment.start:.2f} -> {segment.end:.2f}] {segment.text.strip()}' if print_segments else segment.text.strip()
+                if f:
+                    f.write(line + '\n')
+                    f.flush()
+            return
+
+        progress = Progress(
+            TextColumn("[bold cyan]{task.description}"),
+            BarColumn(bar_width=40),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            TextColumn("/"),
+            TimeRemainingColumn(),
+        )
+        task = progress.add_task("Распознавание", total=total_duration)
+
+        with Live(Group(progress, Text("")), console=self.console, refresh_per_second=4) as live:
+            for segment in segments:
+                line = f'[{segment.start:.2f} -> {segment.end:.2f}] {segment.text.strip()}' if print_segments else segment.text.strip()
+
+                progress.update(task, completed=segment.end)
+                max_width = max(self.console.width - 4, 20)
+                display_text = line if len(line) <= max_width else line[:max_width - 1] + "\u2026"
+                live.update(Group(progress, Text(f"  {display_text}", style="dim italic")))
+
+                if f:
+                    f.write(line + '\n')
+                    f.flush()
+
+            progress.update(task, completed=total_duration)
+            live.update(Group(progress, Text("")))
         
 
     def batch_transcribe_directory(self, 
